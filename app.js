@@ -188,7 +188,7 @@ async function generateRoutes() {
     results.forEach((geojson, i) => {
       const layer = L.geoJSON(geojson, {
         style: { color: ROUTE_CONFIGS[i].color, weight: 4, opacity: 0.6 },
-        onEachFeature: (_, l) => { l.on("click", () => selectRoute(i)); },
+        onEachFeature: (_, l) => { l.on("click", (e) => { L.DomEvent.stopPropagation(e); selectRoute(i); }); },
       }).addTo(map);
       routeLayers.push(layer);
     });
@@ -209,19 +209,23 @@ async function generateRoutes() {
 async function fetchWithTolerance(profile, baseBody, distanceMeters, baseSeed, apiKey, label) {
   const TOLERANCE = 0.05;
   let best = null, bestDelta = Infinity;
+  let lastErr = null;
 
   for (let attempt = 0; attempt < 4; attempt++) {
     const body = {
       ...baseBody,
       options: { round_trip: { ...baseBody.options.round_trip, seed: baseSeed + attempt * 31 } },
     };
-    const geojson = await orsPost(profile, body, apiKey, label);
-    const actual = (geojson.features?.[0]?.properties?.summary?.distance ?? 0) * 1000;
-    const delta = Math.abs(actual - distanceMeters) / distanceMeters;
-    if (delta <= TOLERANCE) return geojson;
-    if (delta < bestDelta) { best = geojson; bestDelta = delta; }
+    try {
+      const geojson = await orsPost(profile, body, apiKey, label);
+      const actual = (geojson.features?.[0]?.properties?.summary?.distance ?? 0) * 1000;
+      const delta = Math.abs(actual - distanceMeters) / distanceMeters;
+      if (delta <= TOLERANCE) return geojson;
+      if (delta < bestDelta) { best = geojson; bestDelta = delta; }
+    } catch (err) { lastErr = err; }
   }
 
+  if (!best) throw lastErr ?? new Error(`Could not generate route (${label})`);
   return best;
 }
 
