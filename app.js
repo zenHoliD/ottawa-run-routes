@@ -1,19 +1,41 @@
 const OTTAWA_CENTER = [45.4215, -75.6972];
 const ORS_BASE = "https://api.openrouteservice.org/v2";
 
-// Known scenic points: Rideau Canal, Ottawa River path, Major's Hill, Vincent Massey,
-// Hog's Back, Britannia, Rideau River east bank, Confederation Park, Strathcona Park
-const SCENIC_POINTS = [
-  [-75.6901, 45.4101], [-75.7200, 45.4320], [-75.6936, 45.4272],
-  [-75.7150, 45.3850], [-75.6986, 45.3756], [-75.7650, 45.4040],
-  [-75.6700, 45.4000], [-75.6960, 45.4230], [-75.6620, 45.4170],
+// Rideau Canal path: Dow's Lake → Ottawa Locks (south to north, [lng, lat])
+const RIDEAU_CANAL = [
+  [-75.7168, 45.3897], // Dow's Lake
+  [-75.7080, 45.3940], // Carling Ave bridge
+  [-75.7020, 45.3975], // Bronson Ave area
+  [-75.6980, 45.4010], // Glebe entry
+  [-75.6947, 45.4050], // Fifth Ave bridge
+  [-75.6920, 45.4090], // Pretoria Bridge
+  [-75.6901, 45.4130], // Bank St bridge
+  [-75.6880, 45.4175], // Hartwell Locks area
+  [-75.6870, 45.4215], // Laurier Ave bridge
+  [-75.6920, 45.4250], // Plaza Bridge
+  [-75.6963, 45.4270], // Ottawa Locks / Parliament Hill
 ];
 
-// Safe running corridors: NCC pathways, canal, river paths, major parks
+// Ottawa green areas and parks
+const GREEN_AREAS = [
+  [-75.7150, 45.3850], // Vincent Massey Park
+  [-75.6986, 45.3756], // Hog's Back Falls
+  [-75.7650, 45.4040], // Britannia Park
+  [-75.6936, 45.4272], // Major's Hill Park
+  [-75.7400, 45.3950], // Central Experimental Farm
+  [-75.6620, 45.4170], // Strathcona Park
+  [-75.6700, 45.4000], // Rideau River east pathway
+  [-75.7200, 45.4320], // Ottawa River NCC pathway
+  [-75.6500, 45.4050], // Rideau River south
+];
+
+// All scenic + safe points (used for scoring)
+const SCENIC_POINTS = [...RIDEAU_CANAL, ...GREEN_AREAS];
+
+// Safe running corridors (NCC pathways, parks, canal)
 const SAFE_CORRIDORS = [
+  ...RIDEAU_CANAL,
   [-75.7200, 45.4320], [-75.7400, 45.4250], [-75.7600, 45.4130],
-  [-75.6901, 45.4101], [-75.6800, 45.3980], [-75.6700, 45.3870],
-  [-75.6700, 45.4000], [-75.6600, 45.4100], [-75.6500, 45.4050],
   [-75.7150, 45.3850], [-75.6986, 45.3756],
 ];
 
@@ -123,9 +145,12 @@ async function generateRoutes() {
   clearRoutes();
 
   try {
-    const results = await Promise.all(
-      ROUTE_CONFIGS.map((cfg) => fetchRoute(apiKey, startCoords, distanceMeters, cfg))
-    );
+    const pref = getPrefs();
+    const fetcher = pref === "scenic"
+      ? (cfg, i) => fetchScenicRoute(apiKey, startCoords, distanceMeters, i)
+      : (cfg)    => fetchRoute(apiKey, startCoords, distanceMeters, cfg);
+
+    const results = await Promise.all(ROUTE_CONFIGS.map(fetcher));
 
     routeData = results;
 
@@ -158,12 +183,6 @@ async function generateRoutes() {
 }
 
 async function fetchRoute(apiKey, coords, distanceMeters, cfg) {
-  const pref = getPrefs();
-
-  // foot-hiking follows dedicated trails/NCC paths over streets (better for scenic).
-  // foot-walking is standard urban pedestrian routing (sidewalks, crossings, paths).
-  const profile = pref === "scenic" ? "foot-hiking" : "foot-walking";
-
   const body = {
     coordinates: [coords],
     options: {
@@ -173,16 +192,56 @@ async function fetchRoute(apiKey, coords, distanceMeters, cfg) {
     elevation: true,
     instructions: false,
   };
+  return orsPost("foot-walking", body, apiKey, cfg.name);
+}
 
+// Scenic routes use explicit canal/park waypoints to guarantee passing through them.
+// variant 0 → canal only (simple loop via nearest canal stretch)
+// variant 1 → two canal points (longer canal coverage)
+// variant 2 → canal entry + green area (mixed scenic)
+async function fetchScenicRoute(apiKey, startCoords, distanceMeters, variant) {
+  const half = distanceMeters / 2;
+
+  let waypoints;
+  if (variant === 0) {
+    const wp = nearestAtDist(startCoords, RIDEAU_CANAL, half);
+    waypoints = [startCoords, wp, startCoords];
+  } else if (variant === 1) {
+    const wp1 = nearestAtDist(startCoords, RIDEAU_CANAL, half * 0.55);
+    const wp2 = nearestAtDist(startCoords, RIDEAU_CANAL, half * 1.1, [wp1]);
+    waypoints = [startCoords, wp1, wp2, startCoords];
+  } else {
+    const canalWp = nearestAtDist(startCoords, RIDEAU_CANAL, half * 0.7);
+    const greenWp = nearestAtDist(startCoords, GREEN_AREAS, half, [canalWp]);
+    waypoints = [startCoords, canalWp, greenWp, startCoords];
+  }
+
+  const body = { coordinates: waypoints, units: "km", elevation: true, instructions: false };
+  return orsPost("foot-hiking", body, apiKey, `Scenic ${variant + 1}`);
+}
+
+// Find the point in `pool` whose straight-line distance from `from` is closest
+// to `targetM` metres, excluding any points in `exclude`.
+function nearestAtDist(from, pool, targetM, exclude = []) {
+  const available = pool.filter(
+    (p) => !exclude.some((e) => e[0] === p[0] && e[1] === p[1])
+  );
+  return available.reduce((best, p) => {
+    const d = haversine(from[1], from[0], p[1], p[0]);
+    const bd = haversine(from[1], from[0], best[1], best[0]);
+    return Math.abs(d - targetM) < Math.abs(bd - targetM) ? p : best;
+  });
+}
+
+async function orsPost(profile, body, apiKey, label) {
   const res = await fetch(`${ORS_BASE}/directions/${profile}/geojson`, {
     method: "POST",
     headers: { Authorization: apiKey, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `API error ${res.status} for ${cfg.name}`);
+    throw new Error(err.error?.message || `API error ${res.status} (${label})`);
   }
   return res.json();
 }
