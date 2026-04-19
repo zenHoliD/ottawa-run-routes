@@ -1,8 +1,7 @@
 const OTTAWA_CENTER = [45.4215, -75.6972];
 const ORS_BASE      = "https://api.openrouteservice.org/v2";
-const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 
-// ── Ottawa geography ──────────────────────────────────────────
+// ── Ottawa geography (scenic waypoint pools) ─────────────────
 const RIDEAU_CANAL = [
   [-75.7168, 45.3897], // Dow's Lake
   [-75.7080, 45.3940], // Carling Ave bridge
@@ -199,14 +198,6 @@ async function generateRoutes() {
 
     renderRouteCards(results);
     setStatus("Click a route on the map or in the list to select it.");
-
-    // Descriptions generated in background — cards update as each comes in
-    const anthropicKey = getAnthropicKey();
-    if (anthropicKey) {
-      results.forEach((geojson, i) => {
-        describeRoute(geojson, anthropicKey).then((desc) => { if (desc) updateCardDescription(i, desc); });
-      });
-    }
   } catch (err) {
     setStatus(`Error: ${err.message}`, "error");
   } finally {
@@ -215,86 +206,42 @@ async function generateRoutes() {
 }
 
 // ── ORS routing ───────────────────────────────────────────────
+async function fetchWithTolerance(profile, baseBody, distanceMeters, baseSeed, apiKey, label) {
+  const TOLERANCE = 0.05;
+  let best = null, bestDelta = Infinity;
+
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const body = {
+      ...baseBody,
+      options: { round_trip: { ...baseBody.options.round_trip, seed: baseSeed + attempt * 31 } },
+    };
+    const geojson = await orsPost(profile, body, apiKey, label);
+    const actual = (geojson.features?.[0]?.properties?.summary?.distance ?? 0) * 1000;
+    const delta = Math.abs(actual - distanceMeters) / distanceMeters;
+    if (delta <= TOLERANCE) return geojson;
+    if (delta < bestDelta) { best = geojson; bestDelta = delta; }
+  }
+
+  return best;
+}
+
 async function fetchRoute(apiKey, coords, distanceMeters, cfg) {
   const body = {
     coordinates: [coords],
     options: { round_trip: { length: distanceMeters, points: cfg.points, seed: cfg.seed } },
     units: "km", elevation: true, instructions: false,
   };
-  return orsPost("foot-walking", body, apiKey, cfg.name);
+  return fetchWithTolerance("foot-walking", body, distanceMeters, cfg.seed, apiKey, cfg.name);
 }
 
 async function fetchScenicRoute(apiKey, startCoords, distanceMeters, variant) {
-  const URBAN_FACTOR = 1.35;
-
-  // Max straight-line reach: a waypoint further than this can't form a loop
-  // within the target distance (it would consume more than half the budget one-way).
-  const maxReach = distanceMeters / (2 * URBAN_FACTOR);
-
-  // Ideal straight-line distance for each leg of a 3-point triangle:
-  // total_walked ≈ URBAN_FACTOR × (leg1 + leg2 + leg3)
-  // For an equilateral triangle: each leg ≈ D / (3 × URBAN_FACTOR)
-  const idealDist = (scale) => (distanceMeters / (3 * URBAN_FACTOR)) * scale;
-
-  // Filter a pool to points reachable from start within maxReach
-  const reachable = (pool) =>
-    pool.filter((p) => haversine(startCoords[1], startCoords[0], p[1], p[0]) <= maxReach);
-
-  // Build waypoints for this variant, with the `scale` applied to idealDist for retries
-  const buildWaypoints = (scale) => {
-    const ideal = idealDist(scale);
-
-    // Reachable sub-pools (computed once per call, not per scale)
-    const rCanal  = reachable(RIDEAU_CANAL);
-    const rSouth  = reachable(CANAL_SOUTH);
-    const rNorth  = reachable(CANAL_NORTH);
-    const rGreen  = reachable(GREEN_AREAS);
-    // Fallback: everything reachable, sorted by distance so we always get something
-    const rAll    = reachable(ALL_SCENIC);
-
-    let wp1, wp2;
-
-    if (variant === 0) {
-      // Route A: south canal entry + north canal exit (traverses the canal length)
-      // Falls back to nearest distinct scenic points if canal is out of range
-      const poolA = rSouth.length ? rSouth : rCanal.length ? rCanal : rAll;
-      const poolB = rNorth.length ? rNorth : rAll;
-      wp1 = nearestAtDist(startCoords, poolA, ideal);
-      wp2 = nearestAtDist(startCoords, poolB, ideal, [wp1]);
-    } else if (variant === 1) {
-      // Route B: nearest canal point + nearest green area
-      const poolA = rCanal.length ? rCanal : rAll;
-      const poolB = rGreen.length ? rGreen : rAll;
-      wp1 = nearestAtDist(startCoords, poolA, ideal);
-      wp2 = nearestAtDist(startCoords, poolB, ideal, [wp1]);
-    } else {
-      // Route C: two green areas (no canal) — visually distinct from A and B
-      const pool = rGreen.length >= 2 ? rGreen : rAll;
-      wp1 = nearestAtDist(startCoords, pool, ideal);
-      wp2 = nearestAtDist(startCoords, pool, ideal, [wp1]);
-    }
-
-    return {
-      waypoints: [startCoords, wp1, wp2, startCoords],
-      desc: `${labelForPoint(wp1)} and ${labelForPoint(wp2)}`,
-    };
+  const cfg = ROUTE_CONFIGS[variant];
+  const body = {
+    coordinates: [startCoords],
+    options: { round_trip: { length: distanceMeters, points: cfg.points, seed: cfg.seed } },
+    units: "km", elevation: true, instructions: false,
   };
-
-  const label = `Scenic ${variant + 1}`;
-  const { waypoints, desc } = buildWaypoints(1.0);
-  const fetch1 = await orsPost("foot-hiking",
-    { coordinates: waypoints, units: "km", elevation: true, instructions: false },
-    apiKey, label);
-
-  // One retry if distance is >15% off: scale idealDist by the error ratio
-  const actualM = (fetch1.features?.[0]?.properties?.summary?.distance ?? 0) * 1000;
-  const ratio   = actualM > 0 ? distanceMeters / actualM : 1;
-  const geojson = Math.abs(ratio - 1) <= 0.15 ? fetch1 : await orsPost("foot-hiking",
-    { coordinates: buildWaypoints(ratio).waypoints, units: "km", elevation: true, instructions: false },
-    apiKey, label);
-
-  geojson._meta = { waypointDesc: desc };
-  return geojson;
+  return fetchWithTolerance("foot-hiking", body, distanceMeters, cfg.seed, apiKey, cfg.name);
 }
 
 async function orsPost(profile, body, apiKey, label) {
@@ -308,42 +255,6 @@ async function orsPost(profile, body, apiKey, label) {
     throw new Error(err.error?.message || `API error ${res.status} (${label})`);
   }
   return res.json();
-}
-
-// ── Claude route description ──────────────────────────────────
-async function describeRoute(geojson, anthropicKey) {
-  const props      = geojson.features?.[0]?.properties;
-  const dist       = props?.summary?.distance?.toFixed(1) ?? "?";
-  const duration   = formatDuration(props?.summary?.duration ?? 0);
-  const ascent     = Math.round(props?.ascent ?? 0);
-  const gainPerKm  = (props?.ascent ?? 0) / (props?.summary?.distance ?? 1);
-  const terrain    = gainPerKm < 5 ? "flat" : gainPerKm < 15 ? "moderately hilly" : "hilly";
-  const landmarks  = geojson._meta?.waypointDesc ?? "urban streets";
-
-  const prompt =
-    `Describe this Ottawa running route in ONE sentence, max 20 words. Name specific landmarks. No filler.\n\n` +
-    `Distance: ${dist} km | Time: ${duration} | Gain: ${ascent}m | Terrain: ${terrain}\n` +
-    `Passes through: ${landmarks}`;
-
-  try {
-    const res = await fetch(ANTHROPIC_URL, {
-      method: "POST",
-      headers: {
-        "x-api-key": anthropicKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-        "anthropic-dangerous-direct-browser-access": "true",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 80,
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.content?.[0]?.text?.trim() ?? null;
-  } catch { return null; }
 }
 
 // ── Route cards ───────────────────────────────────────────────
@@ -367,18 +278,12 @@ function renderRouteCards(results) {
       <div class="route-card-info">
         <span class="route-name">${cfg.name}</span>
         <span class="route-stats">${stats}</span>
-        <span class="route-desc loading">Generating description…</span>
       </div>`;
     card.addEventListener("click", () => selectRoute(i));
     container.appendChild(card);
   });
 
   container.classList.remove("hidden");
-}
-
-function updateCardDescription(index, desc) {
-  const descEl = document.querySelectorAll(".route-card")[index]?.querySelector(".route-desc");
-  if (descEl) { descEl.textContent = desc; descEl.classList.remove("loading"); }
 }
 
 // ── Route selection ───────────────────────────────────────────
@@ -503,10 +408,6 @@ function getApiKey() {
   const key = document.getElementById("api-key").value.trim();
   if (!key) { setStatus("Paste your OpenRouteService API key at the bottom.", "error"); return null; }
   return key;
-}
-
-function getAnthropicKey() {
-  return document.getElementById("anthropic-key").value.trim() || null;
 }
 
 function setStatus(msg, type = "") {
