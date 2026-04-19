@@ -32,6 +32,10 @@ const GREEN_AREAS = [
 // All scenic + safe points (used for scoring)
 const SCENIC_POINTS = [...RIDEAU_CANAL, ...GREEN_AREAS];
 
+// Canal split into south/north halves so scenic variants pick from different sections
+const CANAL_SOUTH = RIDEAU_CANAL.slice(0, 5);  // Dow's Lake → Fifth Ave bridge
+const CANAL_NORTH = RIDEAU_CANAL.slice(5);     // Pretoria Bridge → Ottawa Locks
+
 // Safe running corridors (NCC pathways, parks, canal)
 const SAFE_CORRIDORS = [
   ...RIDEAU_CANAL,
@@ -211,16 +215,20 @@ async function fetchScenicRoute(apiKey, startCoords, distanceMeters, variant) {
   const buildWaypoints = (scale) => {
     const half = (distanceMeters / 2 / URBAN_FACTOR) * scale;
     if (variant === 0) {
-      const wp = nearestAtDist(startCoords, RIDEAU_CANAL, half);
-      return [startCoords, wp, startCoords];
+      // South canal entry + north canal exit → forces traversing the canal length
+      const wpS = nearestAtDist(startCoords, CANAL_SOUTH, half * 0.7);
+      const wpN = nearestAtDist(startCoords, CANAL_NORTH, half * 1.3);
+      return [startCoords, wpS, wpN, startCoords];
     } else if (variant === 1) {
-      const wp1 = nearestAtDist(startCoords, RIDEAU_CANAL, half * 0.55);
-      const wp2 = nearestAtDist(startCoords, RIDEAU_CANAL, half * 1.1, [wp1]);
-      return [startCoords, wp1, wp2, startCoords];
-    } else {
-      const canalWp = nearestAtDist(startCoords, RIDEAU_CANAL, half * 0.7);
-      const greenWp = nearestAtDist(startCoords, GREEN_AREAS, half, [canalWp]);
+      // Canal entry + green area → guaranteed different geography from variant 0
+      const canalWp = nearestAtDist(startCoords, RIDEAU_CANAL, half * 0.8);
+      const greenWp = nearestAtDist(startCoords, GREEN_AREAS, half * 1.2);
       return [startCoords, canalWp, greenWp, startCoords];
+    } else {
+      // Two green areas (no canal) → visually distinct from both A and B
+      const green1 = nearestAtDist(startCoords, GREEN_AREAS, half * 0.7);
+      const green2 = nearestAtDist(startCoords, GREEN_AREAS, half * 1.3, [green1]);
+      return [startCoords, green1, green2, startCoords];
     }
   };
 
