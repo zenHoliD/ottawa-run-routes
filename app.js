@@ -1,5 +1,5 @@
 const OTTAWA_CENTER = [45.4215, -75.6972];
-const ORS_BASE      = "https://api.openrouteservice.org/v2";
+const ORS_BASE      = "/api/directions";
 
 // ── Ottawa geography (scenic waypoint pools) ─────────────────
 const RIDEAU_CANAL = [
@@ -161,9 +161,6 @@ function setStart(lat, lng, label) {
 document.getElementById("generate").addEventListener("click", generateRoutes);
 
 async function generateRoutes() {
-  const apiKey = getApiKey();
-  if (!apiKey) return;
-
   if (!startCoords) {
     const addrVal = document.getElementById("address").value.trim();
     if (addrVal) { await geocodeAddress(); if (!startCoords) return; }
@@ -179,8 +176,8 @@ async function generateRoutes() {
   try {
     const pref = getPrefs();
     const fetcher = pref === "scenic"
-      ? (_cfg, i) => fetchScenicRoute(apiKey, startCoords, distanceMeters, i)
-      : (cfg)     => fetchRoute(apiKey, startCoords, distanceMeters, cfg);
+      ? (_cfg, i) => fetchScenicRoute(startCoords, distanceMeters, i)
+      : (cfg)     => fetchRoute(startCoords, distanceMeters, cfg);
 
     const results = await Promise.all(ROUTE_CONFIGS.map(fetcher));
     routeData = results;
@@ -206,7 +203,7 @@ async function generateRoutes() {
 }
 
 // ── ORS routing ───────────────────────────────────────────────
-async function fetchWithTolerance(profile, baseBody, distanceMeters, baseSeed, apiKey, label) {
+async function fetchWithTolerance(profile, baseBody, distanceMeters, baseSeed, label) {
   const TOLERANCE = 0.05;
   let best = null, bestDelta = Infinity;
   let lastErr = null;
@@ -217,7 +214,7 @@ async function fetchWithTolerance(profile, baseBody, distanceMeters, baseSeed, a
       options: { round_trip: { ...baseBody.options.round_trip, seed: baseSeed + attempt * 31 } },
     };
     try {
-      const geojson = await orsPost(profile, body, apiKey, label);
+      const geojson = await orsPost(profile, body, label);
       const actual = (geojson.features?.[0]?.properties?.summary?.distance ?? 0) * 1000;
       const delta = Math.abs(actual - distanceMeters) / distanceMeters;
       if (delta <= TOLERANCE) return geojson;
@@ -229,29 +226,29 @@ async function fetchWithTolerance(profile, baseBody, distanceMeters, baseSeed, a
   return best;
 }
 
-async function fetchRoute(apiKey, coords, distanceMeters, cfg) {
+async function fetchRoute(coords, distanceMeters, cfg) {
   const body = {
     coordinates: [coords],
     options: { round_trip: { length: distanceMeters, points: cfg.points, seed: cfg.seed } },
     units: "km", elevation: true, instructions: false,
   };
-  return fetchWithTolerance("foot-walking", body, distanceMeters, cfg.seed, apiKey, cfg.name);
+  return fetchWithTolerance("foot-walking", body, distanceMeters, cfg.seed, cfg.name);
 }
 
-async function fetchScenicRoute(apiKey, startCoords, distanceMeters, variant) {
+async function fetchScenicRoute(startCoords, distanceMeters, variant) {
   const cfg = ROUTE_CONFIGS[variant];
   const body = {
     coordinates: [startCoords],
     options: { round_trip: { length: distanceMeters, points: cfg.points, seed: cfg.seed } },
     units: "km", elevation: true, instructions: false,
   };
-  return fetchWithTolerance("foot-hiking", body, distanceMeters, cfg.seed, apiKey, cfg.name);
+  return fetchWithTolerance("foot-hiking", body, distanceMeters, cfg.seed, cfg.name);
 }
 
-async function orsPost(profile, body, apiKey, label) {
-  const res = await fetch(`${ORS_BASE}/directions/${profile}/geojson`, {
+async function orsPost(profile, body, label) {
+  const res = await fetch(`${ORS_BASE}/${profile}`, {
     method: "POST",
-    headers: { Authorization: apiKey, "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -406,12 +403,6 @@ function formatDuration(seconds) {
 
 function getPrefs() {
   return document.querySelector('input[name="pref"]:checked')?.value ?? "any";
-}
-
-function getApiKey() {
-  const key = document.getElementById("api-key").value.trim();
-  if (!key) { setStatus("Paste your OpenRouteService API key at the bottom.", "error"); return null; }
-  return key;
 }
 
 function setStatus(msg, type = "") {
