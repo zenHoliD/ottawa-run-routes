@@ -1,6 +1,22 @@
 const OTTAWA_CENTER = [45.4215, -75.6972];
 const ORS_BASE = "https://api.openrouteservice.org/v2";
 
+// Known scenic points: Rideau Canal, Ottawa River path, Major's Hill, Vincent Massey,
+// Hog's Back, Britannia, Rideau River east bank, Confederation Park, Strathcona Park
+const SCENIC_POINTS = [
+  [-75.6901, 45.4101], [-75.7200, 45.4320], [-75.6936, 45.4272],
+  [-75.7150, 45.3850], [-75.6986, 45.3756], [-75.7650, 45.4040],
+  [-75.6700, 45.4000], [-75.6960, 45.4230], [-75.6620, 45.4170],
+];
+
+// Safe running corridors: NCC pathways, canal, river paths, major parks
+const SAFE_CORRIDORS = [
+  [-75.7200, 45.4320], [-75.7400, 45.4250], [-75.7600, 45.4130],
+  [-75.6901, 45.4101], [-75.6800, 45.3980], [-75.6700, 45.3870],
+  [-75.6700, 45.4000], [-75.6600, 45.4100], [-75.6500, 45.4050],
+  [-75.7150, 45.3850], [-75.6986, 45.3756],
+];
+
 const ROUTE_CONFIGS = [
   { name: "Route A", color: "#2563eb", seed: 1,  points: 3 },
   { name: "Route B", color: "#16a34a", seed: 50, points: 5 },
@@ -178,10 +194,8 @@ function selectRoute(index) {
     if (i === index) layer.bringToFront();
   });
 
-  // Update cards
-  document.querySelectorAll(".route-card").forEach((card, i) => {
-    card.classList.toggle("selected", i === index);
-  });
+  // Update cards (rebuild to reflect selection + any preference state)
+  if (routeData.length) buildCards(routeData);
 
   // Show stats
   const geojson = routeData[index];
@@ -200,28 +214,123 @@ function selectRoute(index) {
   setStatus(`${ROUTE_CONFIGS[index].name} selected.`);
 }
 
+// ── Route scoring ─────────────────────────────────────────────
+function scoreRoute(geojson) {
+  const feat = geojson.features?.[0];
+  const coords = feat?.geometry?.coordinates ?? [];
+  const ascent = feat?.properties?.ascent ?? 0;
+  const dist = feat?.properties?.summary?.distance ?? 1;
+
+  // Flatness: gain per km — lower is flatter
+  const gainPerKm = ascent / dist;
+  const flat =
+    gainPerKm < 5  ? { label: "Flat",     emoji: "〰️", score: 3 } :
+    gainPerKm < 15 ? { label: "Moderate", emoji: "🏃", score: 2 } :
+                     { label: "Hilly",    emoji: "⛰️", score: 1 };
+
+  // Scenic: % of route points within 600 m of a scenic landmark
+  const scenicFrac = sampleFraction(coords, SCENIC_POINTS, 600);
+  const scenic =
+    scenicFrac > 0.25 ? { label: "Scenic",      emoji: "🏞️", score: 3 } :
+    scenicFrac > 0.08 ? { label: "Some views",  emoji: "🌳", score: 2 } :
+                        { label: "Urban",        emoji: "🏙️", score: 1 };
+
+  // Safety: % of route points within 500 m of a known safe corridor
+  const safeFrac = sampleFraction(coords, SAFE_CORRIDORS, 500);
+  const safe =
+    safeFrac > 0.35 ? { label: "Safe corridor", emoji: "✅", score: 3 } :
+    safeFrac > 0.12 ? { label: "Mixed areas",   emoji: "⚠️", score: 2 } :
+                      { label: "Check area",    emoji: "🔶", score: 1 };
+
+  return { flat, scenic, safe };
+}
+
+function sampleFraction(coords, points, radiusM) {
+  // Sample every 10th coord for performance
+  const sampled = coords.filter((_, i) => i % 10 === 0);
+  if (!sampled.length) return 0;
+  const nearby = sampled.filter((c) =>
+    points.some((p) => haversine(c[1], c[0], p[1], p[0]) < radiusM)
+  );
+  return nearby.length / sampled.length;
+}
+
+function getPrefs() {
+  return {
+    scenic: document.getElementById("pref-scenic").checked,
+    flat:   document.getElementById("pref-flat").checked,
+    safe:   document.getElementById("pref-safe").checked,
+  };
+}
+
+function bestMatchIndex(scores) {
+  const prefs = getPrefs();
+  if (!prefs.scenic && !prefs.flat && !prefs.safe) return -1;
+  const totals = scores.map((s) => {
+    let t = 0;
+    if (prefs.scenic) t += s.scenic.score;
+    if (prefs.flat)   t += s.flat.score;
+    if (prefs.safe)   t += s.safe.score;
+    return t;
+  });
+  const max = Math.max(...totals);
+  return totals.indexOf(max);
+}
+
 // ── Route cards ───────────────────────────────────────────────
+let routeScores = [];
+
 function renderRouteCards(results) {
+  routeScores = results.map(scoreRoute);
+  buildCards(results);
+
+  // Re-render when any preference changes
+  ["pref-scenic", "pref-flat", "pref-safe"].forEach((id) => {
+    document.getElementById(id).addEventListener("change", () => buildCards(results));
+  });
+}
+
+function buildCards(results) {
   const container = document.getElementById("route-cards");
   container.innerHTML = "";
+  const best = bestMatchIndex(routeScores);
 
   results.forEach((geojson, i) => {
     const cfg = ROUTE_CONFIGS[i];
     const props = geojson.features?.[0]?.properties?.summary;
     const ascent = geojson.features?.[0]?.properties?.ascent;
+    const s = routeScores[i];
 
     const stats = props
       ? `${props.distance.toFixed(1)} km · ${formatDuration(props.duration)}${ascent != null ? ` · ↑${Math.round(ascent)}m` : ""}`
       : cfg.name;
 
+    const prefs = getPrefs();
+    const anyPref = prefs.scenic || prefs.flat || prefs.safe;
+
+    // Build badges — highlight ones that match active preferences
+    const badges = [
+      { data: s.scenic, active: prefs.scenic },
+      { data: s.flat,   active: prefs.flat   },
+      { data: s.safe,   active: prefs.safe   },
+    ].map(({ data, active }) =>
+      `<span class="badge${active && data.score === 3 ? " match" : ""}">${data.emoji} ${data.label}</span>`
+    ).join("");
+
+    const bestBanner = anyPref && i === best
+      ? `<span class="best-match-banner">⭐ Best match</span>`
+      : "";
+
     const card = document.createElement("div");
-    card.className = "route-card";
+    card.className = "route-card" + (i === selectedIndex ? " selected" : "");
     card.style.setProperty("--route-color", cfg.color);
     card.innerHTML = `
       <div class="route-dot" style="background:${cfg.color}"></div>
       <div class="route-card-info">
         <span class="route-name">${cfg.name}</span>
         <span class="route-stats">${stats}</span>
+        <div class="route-badges">${badges}</div>
+        ${bestBanner}
       </div>`;
     card.addEventListener("click", () => selectRoute(i));
     container.appendChild(card);
