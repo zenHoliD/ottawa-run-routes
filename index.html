@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ottawa Run Routes</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="sidebar">
+    <h1>Ottawa Run Routes</h1>
+    <p class="subtitle">Generate loop routes from any Ottawa address.</p>
+
+    <div class="field">
+      <label>Distance</label>
+      <div class="distance-row">
+        <input type="range" id="distance-slider" min="2" max="42" step="0.5" value="8" />
+        <span id="distance-label">8 km</span>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Starting point</label>
+      <div class="address-row">
+        <input type="text" id="address" placeholder="e.g. 100 Wellington St, Ottawa" />
+        <button id="geocode-btn" title="Search">⌕</button>
+      </div>
+      <button id="use-location">⊙ Use my location</button>
+    </div>
+
+    <button id="generate" class="primary">Generate 3 Routes</button>
+    <div id="status"></div>
+
+    <div id="route-cards" class="hidden"></div>
+
+    <div id="selected-info" class="hidden">
+      <div class="stat"><span class="stat-label">Distance</span><span id="info-distance">—</span></div>
+      <div class="stat"><span class="stat-label">Est. time</span><span id="info-duration">—</span></div>
+      <div class="stat"><span class="stat-label">Elevation gain</span><span id="info-ascent">—</span></div>
+    </div>
+
+    <div class="api-key-section">
+      <label>OpenRouteService API Key</label>
+      <input type="text" id="api-key" placeholder="Paste your free API key here" />
+      <a href="https://openrouteservice.org/dev/#/signup" target="_blank" rel="noopener">Get a free key →</a>
+    </div>
+  </div>
+
+  <div id="main">
+    <div id="map"></div>
+    <div id="elevation-panel" class="hidden">
+      <div id="elevation-header">
+        <span id="elevation-title">Elevation Profile</span>
+        <button id="elevation-close">✕</button>
+      </div>
+      <canvas id="elevation-chart"></canvas>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
