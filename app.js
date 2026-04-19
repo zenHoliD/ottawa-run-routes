@@ -17,26 +17,76 @@ const RIDEAU_CANAL = [
   [-75.6963, 45.4270], // Ottawa Locks / Parliament Hill
 ];
 
+const CANAL_LABELS = [
+  "Dow's Lake", "Carling Ave bridge", "Bronson Ave", "Glebe entry",
+  "Fifth Ave bridge", "Pretoria Bridge", "Bank St bridge",
+  "Hartwell Locks", "Laurier Ave bridge", "Plaza Bridge", "Ottawa Locks",
+];
+
+// Green areas covering all of Ottawa and Gatineau — not just downtown
 const GREEN_AREAS = [
+  // Central / Downtown
   [-75.7150, 45.3850], // Vincent Massey Park
   [-75.6986, 45.3756], // Hog's Back Falls
-  [-75.7650, 45.4040], // Britannia Park
   [-75.6936, 45.4272], // Major's Hill Park
-  [-75.7400, 45.3950], // Central Experimental Farm
   [-75.6620, 45.4170], // Strathcona Park
+  [-75.7400, 45.3950], // Central Experimental Farm
   [-75.6700, 45.4000], // Rideau River east pathway
-  [-75.7200, 45.4320], // Ottawa River NCC pathway
-  [-75.6500, 45.4050], // Rideau River south
+  [-75.6500, 45.4050], // Rideau River south path
+  // West Ottawa
+  [-75.7650, 45.4040], // Britannia Park
+  [-75.8100, 45.3620], // Andrew Haydon Park
+  [-75.8700, 45.3400], // Jack Pine Trail / NCC Greenbelt west
+  [-75.9100, 45.3200], // Kanata Lakes / Beaver Pond
+  [-75.8800, 45.3900], // Shirley's Bay NCC area
+  [-75.8300, 45.3500], // NCC Greenbelt (Pinecrest)
+  // East Ottawa / Orléans
+  [-75.4900, 45.4800], // Petrie Island
+  [-75.5200, 45.4400], // Jeanne d'Arc corridor
+  [-75.5500, 45.3800], // NCC Greenbelt east
+  [-75.5800, 45.4200], // Orléans waterfront / Rideau River east
+  // South Ottawa / Barrhaven
+  [-75.7360, 45.2800], // Walter Baker Park
+  [-75.7600, 45.2700], // Chapman Mills Conservation Area
+  [-75.7100, 45.3200], // NCC Greenbelt south
+  [-75.6800, 45.3100], // Rideau River south corridor
+  // Gatineau / North
+  [-75.7200, 45.4320], // Ottawa River NCC pathway (downtown)
+  [-75.7700, 45.4200], // Ottawa River NCC pathway (west)
+  [-75.7000, 45.4400], // Leamy Lake Park, Gatineau
+  [-75.7100, 45.4350], // Jacques-Cartier Park, Gatineau
+  [-75.8200, 45.5000], // Gatineau Park main entrance
+  [-75.8500, 45.4800], // Gatineau Park (Lac Meech sector)
+  [-75.9500, 45.4600], // Gatineau Park (Cheltenham sector)
 ];
 
 const GREEN_AREA_LABELS = [
-  "Vincent Massey Park", "Hog's Back Falls", "Britannia Park",
-  "Major's Hill Park", "Central Experimental Farm", "Strathcona Park",
-  "Rideau River pathway", "Ottawa River NCC pathway", "Rideau River south path",
+  // Central
+  "Vincent Massey Park", "Hog's Back Falls", "Major's Hill Park",
+  "Strathcona Park", "Central Experimental Farm",
+  "Rideau River pathway", "Rideau River south path",
+  // West
+  "Britannia Park", "Andrew Haydon Park",
+  "Jack Pine Trail", "Kanata Lakes / Beaver Pond",
+  "Shirley's Bay NCC", "NCC Greenbelt (Pinecrest)",
+  // East
+  "Petrie Island", "Jeanne d'Arc corridor",
+  "NCC Greenbelt east", "Orléans riverside path",
+  // South
+  "Walter Baker Park", "Chapman Mills Conservation Area",
+  "NCC Greenbelt south", "Rideau River south corridor",
+  // Gatineau / North
+  "Ottawa River NCC pathway", "Ottawa River pathway (west)",
+  "Leamy Lake Park", "Jacques-Cartier Park",
+  "Gatineau Park entrance", "Gatineau Park (Lac Meech)",
+  "Gatineau Park (Cheltenham)",
 ];
 
 const CANAL_SOUTH = RIDEAU_CANAL.slice(0, 5); // Dow's Lake → Fifth Ave bridge
 const CANAL_NORTH = RIDEAU_CANAL.slice(5);    // Pretoria Bridge → Ottawa Locks
+
+// Combined pool for proximity searches
+const ALL_SCENIC = [...RIDEAU_CANAL, ...GREEN_AREAS];
 
 const ROUTE_CONFIGS = [
   { name: "Route A", color: "#2563eb", seed: 1,  points: 3 },
@@ -177,33 +227,71 @@ async function fetchRoute(apiKey, coords, distanceMeters, cfg) {
 async function fetchScenicRoute(apiKey, startCoords, distanceMeters, variant) {
   const URBAN_FACTOR = 1.35;
 
+  // Max straight-line reach: a waypoint further than this can't form a loop
+  // within the target distance (it would consume more than half the budget one-way).
+  const maxReach = distanceMeters / (2 * URBAN_FACTOR);
+
+  // Ideal straight-line distance for each leg of a 3-point triangle:
+  // total_walked ≈ URBAN_FACTOR × (leg1 + leg2 + leg3)
+  // For an equilateral triangle: each leg ≈ D / (3 × URBAN_FACTOR)
+  const idealDist = (scale) => (distanceMeters / (3 * URBAN_FACTOR)) * scale;
+
+  // Filter a pool to points reachable from start within maxReach
+  const reachable = (pool) =>
+    pool.filter((p) => haversine(startCoords[1], startCoords[0], p[1], p[0]) <= maxReach);
+
+  // Build waypoints for this variant, with the `scale` applied to idealDist for retries
   const buildWaypoints = (scale) => {
-    const half = (distanceMeters / 2 / URBAN_FACTOR) * scale;
+    const ideal = idealDist(scale);
+
+    // Reachable sub-pools (computed once per call, not per scale)
+    const rCanal  = reachable(RIDEAU_CANAL);
+    const rSouth  = reachable(CANAL_SOUTH);
+    const rNorth  = reachable(CANAL_NORTH);
+    const rGreen  = reachable(GREEN_AREAS);
+    // Fallback: everything reachable, sorted by distance so we always get something
+    const rAll    = reachable(ALL_SCENIC);
+
+    let wp1, wp2;
+
     if (variant === 0) {
-      const wpS = nearestAtDist(startCoords, CANAL_SOUTH, half * 0.7);
-      const wpN = nearestAtDist(startCoords, CANAL_NORTH, half * 1.3);
-      return { waypoints: [startCoords, wpS, wpN, startCoords], desc: `south Rideau Canal (Dow's Lake area) and north canal (Ottawa Locks)` };
+      // Route A: south canal entry + north canal exit (traverses the canal length)
+      // Falls back to nearest distinct scenic points if canal is out of range
+      const poolA = rSouth.length ? rSouth : rCanal.length ? rCanal : rAll;
+      const poolB = rNorth.length ? rNorth : rAll;
+      wp1 = nearestAtDist(startCoords, poolA, ideal);
+      wp2 = nearestAtDist(startCoords, poolB, ideal, [wp1]);
     } else if (variant === 1) {
-      const canalWp = nearestAtDist(startCoords, RIDEAU_CANAL, half * 0.8);
-      const greenWp = nearestAtDist(startCoords, GREEN_AREAS,   half * 1.2);
-      return { waypoints: [startCoords, canalWp, greenWp, startCoords], desc: `Rideau Canal and ${labelForGreen(greenWp)}` };
+      // Route B: nearest canal point + nearest green area
+      const poolA = rCanal.length ? rCanal : rAll;
+      const poolB = rGreen.length ? rGreen : rAll;
+      wp1 = nearestAtDist(startCoords, poolA, ideal);
+      wp2 = nearestAtDist(startCoords, poolB, ideal, [wp1]);
     } else {
-      const green1 = nearestAtDist(startCoords, GREEN_AREAS, half * 0.7);
-      const green2 = nearestAtDist(startCoords, GREEN_AREAS, half * 1.3, [green1]);
-      return { waypoints: [startCoords, green1, green2, startCoords], desc: `${labelForGreen(green1)} and ${labelForGreen(green2)}` };
+      // Route C: two green areas (no canal) — visually distinct from A and B
+      const pool = rGreen.length >= 2 ? rGreen : rAll;
+      wp1 = nearestAtDist(startCoords, pool, ideal);
+      wp2 = nearestAtDist(startCoords, pool, ideal, [wp1]);
     }
+
+    return {
+      waypoints: [startCoords, wp1, wp2, startCoords],
+      desc: `${labelForPoint(wp1)} and ${labelForPoint(wp2)}`,
+    };
   };
 
+  const label = `Scenic ${variant + 1}`;
   const { waypoints, desc } = buildWaypoints(1.0);
   const fetch1 = await orsPost("foot-hiking",
     { coordinates: waypoints, units: "km", elevation: true, instructions: false },
-    apiKey, `Scenic ${variant + 1}`);
+    apiKey, label);
 
+  // One retry if distance is >15% off: scale idealDist by the error ratio
   const actualM = (fetch1.features?.[0]?.properties?.summary?.distance ?? 0) * 1000;
   const ratio   = actualM > 0 ? distanceMeters / actualM : 1;
   const geojson = Math.abs(ratio - 1) <= 0.15 ? fetch1 : await orsPost("foot-hiking",
     { coordinates: buildWaypoints(ratio).waypoints, units: "km", elevation: true, instructions: false },
-    apiKey, `Scenic ${variant + 1}`);
+    apiKey, label);
 
   geojson._meta = { waypointDesc: desc };
   return geojson;
@@ -387,6 +475,12 @@ function nearestAtDist(from, pool, targetM, exclude = []) {
 function labelForGreen(coords) {
   const idx = GREEN_AREAS.findIndex((p) => p[0] === coords[0] && p[1] === coords[1]);
   return idx >= 0 ? GREEN_AREA_LABELS[idx] : "green area";
+}
+
+function labelForPoint(coords) {
+  const ci = RIDEAU_CANAL.findIndex((p) => p[0] === coords[0] && p[1] === coords[1]);
+  if (ci >= 0) return CANAL_LABELS[ci];
+  return labelForGreen(coords);
 }
 
 function haversine(lat1, lon1, lat2, lon2) {
