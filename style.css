@@ -150,32 +150,12 @@ button.primary:disabled { background: #93c5fd; cursor: not-allowed; }
   background: var(--route-color);
 }
 
-.route-card-info { display: flex; flex-direction: column; gap: 4px; }
-.route-name { font-weight: 600; font-size: 13px; }
+.route-card-info { display: flex; flex-direction: column; gap: 3px; }
+.route-name  { font-weight: 600; font-size: 13px; }
 .route-stats { font-size: 11px; color: #666; }
-
-.route-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
-.badge {
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 10px;
-  background: #f1f5f9;
-  color: #475569;
-  border: 1px solid #e2e8f0;
-  white-space: nowrap;
-}
-.badge.match { background: #dcfce7; color: #166534; border-color: #86efac; }
-
-.best-match-banner {
-  font-size: 11px;
-  font-weight: 600;
-  color: #166534;
-  background: #dcfce7;
-  border-radius: 4px;
-  padding: 2px 6px;
-  margin-top: 2px;
-  display: inline-block;
-}
+.route-desc  { font-size: 11px; color: #444; font-style: italic; line-height: 1.4; }
+.route-desc.loading { color: #93c5fd; }
+.optional { font-weight: 400; color: #999; font-size: 10px; text-transform: none; letter-spacing: 0; }
 
 /* ── Selected route info ─────────────────────────── */
 #selected-info {

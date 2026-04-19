@@ -33,9 +33,7 @@
       <label>Route preference</label>
       <div id="prefs">
         <label class="pref-chip"><input type="radio" name="pref" value="any" checked> 🎯 Any route</label>
-        <label class="pref-chip"><input type="radio" name="pref" value="scenic"> 🏞️ Scenic views</label>
-        <label class="pref-chip"><input type="radio" name="pref" value="flat"> 〰️ Flat terrain</label>
-        <label class="pref-chip"><input type="radio" name="pref" value="safe"> ✅ Safe corridors</label>
+        <label class="pref-chip"><input type="radio" name="pref" value="scenic"> 🏞️ Scenic (canal &amp; parks)</label>
       </div>
     </div>
 
@@ -52,8 +50,11 @@
 
     <div class="api-key-section">
       <label>OpenRouteService API Key</label>
-      <input type="text" id="api-key" placeholder="Paste your free API key here" />
+      <input type="text" id="api-key" placeholder="Paste your free ORS key" />
       <a href="https://openrouteservice.org/dev/#/signup" target="_blank" rel="noopener">Get a free key →</a>
+      <label style="margin-top:8px">Anthropic API Key <span class="optional">(for descriptions)</span></label>
+      <input type="text" id="anthropic-key" placeholder="sk-ant-…" />
+      <a href="https://console.anthropic.com/" target="_blank" rel="noopener">Get a key →</a>
     </div>
   </div>
 
