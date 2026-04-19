@@ -158,6 +158,12 @@ async function generateRoutes() {
 }
 
 async function fetchRoute(apiKey, coords, distanceMeters, cfg) {
+  const pref = getPrefs();
+
+  // foot-hiking follows dedicated trails/NCC paths over streets (better for scenic).
+  // foot-walking is standard urban pedestrian routing (sidewalks, crossings, paths).
+  const profile = pref === "scenic" ? "foot-hiking" : "foot-walking";
+
   const body = {
     coordinates: [coords],
     options: {
@@ -168,7 +174,7 @@ async function fetchRoute(apiKey, coords, distanceMeters, cfg) {
     instructions: false,
   };
 
-  const res = await fetch(`${ORS_BASE}/directions/foot-walking/geojson`, {
+  const res = await fetch(`${ORS_BASE}/directions/${profile}/geojson`, {
     method: "POST",
     headers: { Authorization: apiKey, "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -256,25 +262,16 @@ function sampleFraction(coords, points, radiusM) {
 }
 
 function getPrefs() {
-  return {
-    scenic: document.getElementById("pref-scenic").checked,
-    flat:   document.getElementById("pref-flat").checked,
-    safe:   document.getElementById("pref-safe").checked,
-  };
+  return document.querySelector('input[name="pref"]:checked')?.value ?? "any";
 }
 
 function bestMatchIndex(scores) {
-  const prefs = getPrefs();
-  if (!prefs.scenic && !prefs.flat && !prefs.safe) return -1;
-  const totals = scores.map((s) => {
-    let t = 0;
-    if (prefs.scenic) t += s.scenic.score;
-    if (prefs.flat)   t += s.flat.score;
-    if (prefs.safe)   t += s.safe.score;
-    return t;
-  });
-  const max = Math.max(...totals);
-  return totals.indexOf(max);
+  const pref = getPrefs();
+  if (pref === "any") return -1;
+  const key = pref; // "scenic" | "flat" | "safe"
+  const best = scores.reduce((bestI, s, i) =>
+    s[key].score > scores[bestI][key].score ? i : bestI, 0);
+  return best;
 }
 
 // ── Route cards ───────────────────────────────────────────────
@@ -284,10 +281,10 @@ function renderRouteCards(results) {
   routeScores = results.map(scoreRoute);
   buildCards(results);
 
-  // Re-render when any preference changes
-  ["pref-scenic", "pref-flat", "pref-safe"].forEach((id) => {
-    document.getElementById(id).addEventListener("change", () => buildCards(results));
-  });
+  // Re-render cards when preference radio changes
+  document.querySelectorAll('input[name="pref"]').forEach((el) =>
+    el.addEventListener("change", () => buildCards(results))
+  );
 }
 
 function buildCards(results) {
@@ -305,19 +302,18 @@ function buildCards(results) {
       ? `${props.distance.toFixed(1)} km · ${formatDuration(props.duration)}${ascent != null ? ` · ↑${Math.round(ascent)}m` : ""}`
       : cfg.name;
 
-    const prefs = getPrefs();
-    const anyPref = prefs.scenic || prefs.flat || prefs.safe;
+    const pref = getPrefs();
 
-    // Build badges — highlight ones that match active preferences
+    // Build badges — highlight the active preference's badge when it scores well
     const badges = [
-      { data: s.scenic, active: prefs.scenic },
-      { data: s.flat,   active: prefs.flat   },
-      { data: s.safe,   active: prefs.safe   },
-    ].map(({ data, active }) =>
-      `<span class="badge${active && data.score === 3 ? " match" : ""}">${data.emoji} ${data.label}</span>`
+      { data: s.scenic, key: "scenic" },
+      { data: s.flat,   key: "flat"   },
+      { data: s.safe,   key: "safe"   },
+    ].map(({ data, key }) =>
+      `<span class="badge${pref === key && data.score === 3 ? " match" : ""}">${data.emoji} ${data.label}</span>`
     ).join("");
 
-    const bestBanner = anyPref && i === best
+    const bestBanner = pref !== "any" && i === best
       ? `<span class="best-match-banner">⭐ Best match</span>`
       : "";
 
