@@ -199,25 +199,43 @@ async function fetchRoute(apiKey, coords, distanceMeters, cfg) {
 // variant 0 → canal only (simple loop via nearest canal stretch)
 // variant 1 → two canal points (longer canal coverage)
 // variant 2 → canal entry + green area (mixed scenic)
+//
+// Distance correction: straight-line distance underestimates actual walking distance
+// by ~35% in Ottawa (streets, detours around buildings, path curves). We divide the
+// target half-distance by URBAN_FACTOR when placing waypoints, then do one retry if
+// the first attempt is still >15% off the requested distance.
 async function fetchScenicRoute(apiKey, startCoords, distanceMeters, variant) {
-  const half = distanceMeters / 2;
+  const URBAN_FACTOR = 1.35;
+  const label = `Scenic ${variant + 1}`;
 
-  let waypoints;
-  if (variant === 0) {
-    const wp = nearestAtDist(startCoords, RIDEAU_CANAL, half);
-    waypoints = [startCoords, wp, startCoords];
-  } else if (variant === 1) {
-    const wp1 = nearestAtDist(startCoords, RIDEAU_CANAL, half * 0.55);
-    const wp2 = nearestAtDist(startCoords, RIDEAU_CANAL, half * 1.1, [wp1]);
-    waypoints = [startCoords, wp1, wp2, startCoords];
-  } else {
-    const canalWp = nearestAtDist(startCoords, RIDEAU_CANAL, half * 0.7);
-    const greenWp = nearestAtDist(startCoords, GREEN_AREAS, half, [canalWp]);
-    waypoints = [startCoords, canalWp, greenWp, startCoords];
-  }
+  const buildWaypoints = (scale) => {
+    const half = (distanceMeters / 2 / URBAN_FACTOR) * scale;
+    if (variant === 0) {
+      const wp = nearestAtDist(startCoords, RIDEAU_CANAL, half);
+      return [startCoords, wp, startCoords];
+    } else if (variant === 1) {
+      const wp1 = nearestAtDist(startCoords, RIDEAU_CANAL, half * 0.55);
+      const wp2 = nearestAtDist(startCoords, RIDEAU_CANAL, half * 1.1, [wp1]);
+      return [startCoords, wp1, wp2, startCoords];
+    } else {
+      const canalWp = nearestAtDist(startCoords, RIDEAU_CANAL, half * 0.7);
+      const greenWp = nearestAtDist(startCoords, GREEN_AREAS, half, [canalWp]);
+      return [startCoords, canalWp, greenWp, startCoords];
+    }
+  };
 
-  const body = { coordinates: waypoints, units: "km", elevation: true, instructions: false };
-  return orsPost("foot-hiking", body, apiKey, `Scenic ${variant + 1}`);
+  const fetch1 = await orsPost("foot-hiking",
+    { coordinates: buildWaypoints(1.0), units: "km", elevation: true, instructions: false },
+    apiKey, label);
+
+  // If actual distance is >15% off, scale waypoint distances by the error ratio and retry once.
+  const actualM = (fetch1.features?.[0]?.properties?.summary?.distance ?? 0) * 1000;
+  const ratio = actualM > 0 ? distanceMeters / actualM : 1;
+  if (Math.abs(ratio - 1) <= 0.15) return fetch1;
+
+  return orsPost("foot-hiking",
+    { coordinates: buildWaypoints(ratio), units: "km", elevation: true, instructions: false },
+    apiKey, label);
 }
 
 // Find the point in `pool` whose straight-line distance from `from` is closest
