@@ -249,7 +249,7 @@ async function fetchScenicRoute(startCoords, distanceMeters, variant) {
 async function orsPost(profile, body, label) {
   const res = await fetch(`${ORS_BASE}/directions/${profile}/geojson`, {
     method: "POST",
-    headers: { Authorization: ORS_KEY, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${ORS_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
