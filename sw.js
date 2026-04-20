@@ -1,15 +1,16 @@
-const CACHE_VERSION = 'ottawa-run-v3';
+const CACHE_VERSION = 'ottawa-run-v4';
+const BASE = self.registration.scope; // e.g. https://zenholid.github.io/ottawa-run-routes/
 const STATIC_ASSETS = [
-  './',
-  './index.html',
-  './app.js',
-  './style.css',
-  './manifest.json',
-  './offline.html',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
-  './icons/icon-maskable-192.png',
-  './icons/icon-maskable-512.png',
+  BASE,
+  BASE + 'index.html',
+  BASE + 'app.js',
+  BASE + 'style.css',
+  BASE + 'manifest.json',
+  BASE + 'offline.html',
+  BASE + 'icons/icon-192.png',
+  BASE + 'icons/icon-512.png',
+  BASE + 'icons/icon-maskable-192.png',
+  BASE + 'icons/icon-maskable-512.png',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
   'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js',
@@ -63,7 +64,7 @@ self.addEventListener('fetch', e => {
         .catch(() => {
           // Offline fallback for navigation requests
           if (e.request.mode === 'navigate') {
-            return caches.match('/offline.html');
+            return caches.match(BASE + 'offline.html');
           }
         });
     })
