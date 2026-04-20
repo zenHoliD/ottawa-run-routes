@@ -127,6 +127,20 @@ button.primary:hover    { background: #1d4ed8; }
 button.primary:disabled { background: #93c5fd; cursor: not-allowed; }
 button.primary:focus-visible { outline: 3px solid #1d4ed8; outline-offset: 3px; }
 
+button.new-search {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 0;
+  min-height: 44px;
+  text-decoration: none;
+}
+button.new-search:hover { color: #1d4ed8; text-decoration: underline; }
+button.new-search:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; border-radius: 3px; }
+
 button.install {
   padding: 11px;
   min-height: 44px;
@@ -146,6 +160,18 @@ button.install:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; 
 #status { font-size: 12px; color: #555; min-height: 16px; }
 #status.error   { color: #dc2626; }
 #status.loading { color: #2563eb; }
+#status.loading::after {
+  content: '';
+  display: inline-block;
+  width: 10px; height: 10px;
+  border: 2px solid #bfdbfe;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── Preference chips ────────────────────────────────── */
 #prefs { display: flex; flex-direction: column; gap: 6px; }
@@ -277,9 +303,23 @@ button.install:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; 
     width: 100%;
     height: auto;
     max-height: 52vh;
+    transition: max-height 0.35s ease;
     padding-top:   max(12px, env(safe-area-inset-top));
     padding-left:  max(16px, env(safe-area-inset-left));
     padding-right: max(16px, env(safe-area-inset-right));
+  }
+
+  /* After routes generated: hide form, shrink sidebar, show map */
+  #sidebar.routes-mode {
+    max-height: 44vh;
+  }
+  #sidebar.routes-mode .field,
+  #sidebar.routes-mode #generate,
+  #sidebar.routes-mode .subtitle {
+    display: none;
+  }
+  #sidebar.routes-mode #new-search-btn {
+    display: flex;
   }
 
   #main { flex: 1; min-height: 0; }

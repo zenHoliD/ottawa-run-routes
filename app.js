@@ -29,7 +29,15 @@ window.addEventListener("load", () => map.invalidateSize());
 // ── Distance slider ───────────────────────────────────────────
 const slider    = document.getElementById("distance-slider");
 const distLabel = document.getElementById("distance-label");
-slider.addEventListener("input", () => { distLabel.textContent = `${slider.value} km`; });
+function updateDistLabel() {
+  const km  = parseFloat(slider.value);
+  const min = Math.round(km / 5.5 * 60);
+  const h   = Math.floor(min / 60), m = min % 60;
+  const time = h > 0 ? `${h}h ${m}m` : `${min} min`;
+  distLabel.textContent = `${slider.value} km · ~${time}`;
+}
+slider.addEventListener("input", updateDistLabel);
+updateDistLabel();
 
 // ── Geolocation ───────────────────────────────────────────────
 document.getElementById("use-location").addEventListener("click", () => {
@@ -81,6 +89,14 @@ function setStart(lat, lng, label) {
   map.setView([lat, lng], 14);
 }
 
+// ── New search (mobile) ───────────────────────────────────────
+document.getElementById("new-search-btn").addEventListener("click", () => {
+  document.getElementById("sidebar").classList.remove("routes-mode");
+  document.getElementById("new-search-btn").classList.add("hidden");
+  clearRoutes();
+  setStatus("Update your start or distance, then generate again.");
+});
+
 // ── Generate routes ───────────────────────────────────────────
 document.getElementById("generate").addEventListener("click", generateRoutes);
 
@@ -90,6 +106,9 @@ async function generateRoutes() {
     if (addrVal) { await geocodeAddress(); if (!startCoords) return; }
     else return setStatus("Set a start — click the map, use your location, or type an address.", "error");
   }
+
+  document.getElementById("sidebar").classList.remove("routes-mode");
+  document.getElementById("new-search-btn").classList.add("hidden");
 
   const distanceMeters = parseFloat(slider.value) * 1000;
   const btn = document.getElementById("generate");
@@ -120,7 +139,12 @@ async function generateRoutes() {
     map.fitBounds(combined, { padding: [40, 40] });
 
     renderRouteCards(results);
-    setStatus("Click a route on the map or in the list to select it.");
+    selectRoute(0); // also sets status
+
+    if (window.innerWidth <= 640) {
+      document.getElementById("sidebar").classList.add("routes-mode");
+      document.getElementById("new-search-btn").classList.remove("hidden");
+    }
   } catch (err) {
     setStatus(`Error: ${err.message}`, "error");
   } finally {
