@@ -242,7 +242,7 @@ async function fetchScenicRoute(startCoords, distanceMeters, variant) {
     options: { round_trip: { length: distanceMeters, points: cfg.points, seed: cfg.seed } },
     units: "km", elevation: true, instructions: false,
   };
-  return fetchWithTolerance("foot-hiking", body, distanceMeters, cfg.seed, cfg.name);
+  return fetchWithTolerance("foot-walking", body, distanceMeters, cfg.seed, cfg.name);
 }
 
 async function orsPost(profile, body, label) {
