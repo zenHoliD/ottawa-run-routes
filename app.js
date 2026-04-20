@@ -1,5 +1,6 @@
 const OTTAWA_CENTER = [45.4215, -75.6972];
-const ORS_BASE      = "/api/directions";
+const ORS_BASE      = "https://api.openrouteservice.org/v2";
+const ORS_KEY       = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImY2NDU4Y2ZhM2UwZTRhNzY5ZDUyN2U1NDAzNmRjYWE1IiwiaCI6Im11cm11cjY0In0=";
 
 // ── Ottawa geography (scenic waypoint pools) ─────────────────
 const RIDEAU_CANAL = [
@@ -246,9 +247,9 @@ async function fetchScenicRoute(startCoords, distanceMeters, variant) {
 }
 
 async function orsPost(profile, body, label) {
-  const res = await fetch(`${ORS_BASE}/${profile}`, {
+  const res = await fetch(`${ORS_BASE}/directions/${profile}/geojson`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { Authorization: ORS_KEY, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
