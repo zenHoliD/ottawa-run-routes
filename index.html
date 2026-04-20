@@ -2,8 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="description" content="Generate loop running routes from any Ottawa address. Choose distance, pick a start, get 3 route options with elevation profiles." />
   <title>Ottawa Run Routes</title>
+
+  <!-- PWA -->
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#2563eb" />
   <meta name="mobile-web-app-capable" content="yes" />
@@ -11,58 +14,65 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Run Routes" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
+
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div id="sidebar">
+  <div id="sidebar" role="complementary" aria-label="Route options">
     <h1>Ottawa Run Routes</h1>
     <p class="subtitle">Generate loop routes from any Ottawa address.</p>
 
     <div class="field">
-      <label>Distance</label>
+      <label for="distance-slider">Distance</label>
       <div class="distance-row">
-        <input type="range" id="distance-slider" min="2" max="42" step="0.5" value="8" />
-        <span id="distance-label">8 km</span>
+        <input type="range" id="distance-slider" min="2" max="42" step="0.5" value="8"
+               aria-label="Target distance in kilometres" />
+        <span id="distance-label" aria-live="polite">8 km</span>
       </div>
     </div>
 
     <div class="field">
-      <label>Starting point</label>
+      <label for="address">Starting point</label>
       <div class="address-row">
-        <input type="text" id="address" placeholder="e.g. 100 Wellington St, Ottawa" />
-        <button id="geocode-btn" title="Search">⌕</button>
+        <input type="text" id="address" placeholder="e.g. 100 Wellington St, Ottawa"
+               aria-label="Starting address" autocomplete="street-address" />
+        <button id="geocode-btn" aria-label="Search address">⌕</button>
       </div>
-      <button id="use-location">⊙ Use my location</button>
+      <button id="use-location" aria-label="Use my current location">⊙ Use my location</button>
     </div>
 
     <div class="field">
       <label>Route preference</label>
-      <div id="prefs">
-        <label class="pref-chip"><input type="radio" name="pref" value="any" checked> 🎯 Any route</label>
-        <label class="pref-chip"><input type="radio" name="pref" value="scenic"> 🏞️ Scenic (canal &amp; parks)</label>
+      <div id="prefs" role="radiogroup" aria-label="Route preference">
+        <label class="pref-chip"><input type="radio" name="pref" value="any" checked /> 🎯 Any route</label>
+        <label class="pref-chip"><input type="radio" name="pref" value="scenic" /> 🏞️ Scenic (canal &amp; parks)</label>
       </div>
     </div>
 
     <button id="generate" class="primary">Generate 3 Routes</button>
-    <div id="status"></div>
 
-    <div id="route-cards" class="hidden"></div>
+    <div id="status" role="status" aria-live="polite" aria-atomic="true"></div>
 
-    <div id="selected-info" class="hidden">
+    <div id="route-cards" class="hidden" role="list" aria-label="Generated routes"></div>
+
+    <div id="selected-info" class="hidden" aria-label="Selected route details">
       <div class="stat"><span class="stat-label">Distance</span><span id="info-distance">—</span></div>
       <div class="stat"><span class="stat-label">Est. time</span><span id="info-duration">—</span></div>
       <div class="stat"><span class="stat-label">Elevation gain</span><span id="info-ascent">—</span></div>
     </div>
 
+    <button id="install-btn" class="install hidden" aria-label="Install app on this device">
+      ⬇ Add to Home Screen
+    </button>
   </div>
 
   <div id="main">
-    <div id="map"></div>
-    <div id="elevation-panel" class="hidden">
+    <div id="map" role="application" aria-label="Route map"></div>
+    <div id="elevation-panel" class="hidden" role="region" aria-label="Elevation profile">
       <div id="elevation-header">
         <span id="elevation-title">Elevation Profile</span>
-        <button id="elevation-close">✕</button>
+        <button id="elevation-close" aria-label="Close elevation panel">✕</button>
       </div>
       <canvas id="elevation-chart"></canvas>
     </div>
@@ -73,7 +83,9 @@
   <script src="app.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js');
+      navigator.serviceWorker.register('/sw.js').catch(err => {
+        console.warn('Service worker registration failed:', err);
+      });
     }
   </script>
 </body>

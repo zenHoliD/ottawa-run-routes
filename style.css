@@ -3,18 +3,24 @@
 body {
   display: flex;
   height: 100vh;
+  height: 100dvh; /* dynamic viewport height — avoids mobile browser chrome */
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 14px;
   color: #1a1a1a;
   background: #f5f5f5;
+  /* Safe area insets for notched / gesture-nav devices */
+  padding-left:  env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
-/* ── Sidebar ─────────────────────────────────────── */
+/* ── Sidebar ─────────────────────────────────────────── */
 #sidebar {
   width: 300px;
   flex-shrink: 0;
   background: #fff;
   padding: 20px 18px;
+  padding-top:    max(20px, env(safe-area-inset-top));
+  padding-bottom: max(20px, env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -26,7 +32,7 @@ body {
 h1 { font-size: 19px; font-weight: 700; color: #111; }
 .subtitle { color: #666; font-size: 13px; margin-top: -8px; }
 
-/* ── Fields ──────────────────────────────────────── */
+/* ── Fields ──────────────────────────────────────────── */
 .field { display: flex; flex-direction: column; gap: 6px; }
 
 label {
@@ -38,7 +44,14 @@ label {
 }
 
 .distance-row { display: flex; align-items: center; gap: 10px; }
-input[type="range"] { flex: 1; accent-color: #2563eb; cursor: pointer; }
+
+input[type="range"] {
+  flex: 1;
+  accent-color: #2563eb;
+  cursor: pointer;
+  min-height: 44px; /* touch target */
+  touch-action: manipulation;
+}
 
 #distance-label {
   font-size: 17px;
@@ -52,28 +65,39 @@ input[type="range"] { flex: 1; accent-color: #2563eb; cursor: pointer; }
 
 input[type="text"] {
   flex: 1;
-  padding: 8px 10px;
+  padding: 10px 12px;
+  min-height: 44px;
   border: 1px solid #ddd;
   border-radius: 6px;
   font-size: 13px;
   background: #fafafa;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  touch-action: manipulation;
 }
-input[type="text"]:focus { outline: none; border-color: #2563eb; background: #fff; }
+input[type="text"]:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.15);
+  background: #fff;
+}
 
 #geocode-btn {
+  min-width: 44px;
+  min-height: 44px;
   padding: 0 10px;
   border: 1px solid #ddd;
   border-radius: 6px;
   background: #fafafa;
   cursor: pointer;
-  font-size: 16px;
+  font-size: 18px;
   transition: background 0.15s;
+  touch-action: manipulation;
 }
-#geocode-btn:hover { background: #e5e7eb; }
+#geocode-btn:hover  { background: #e5e7eb; }
+#geocode-btn:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
 
-/* ── Buttons ─────────────────────────────────────── */
-button { cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+/* ── Buttons ─────────────────────────────────────────── */
+button { cursor: pointer; transition: background 0.15s, border-color 0.15s; touch-action: manipulation; }
 
 #use-location {
   align-self: flex-start;
@@ -81,13 +105,16 @@ button { cursor: pointer; transition: background 0.15s, border-color 0.15s; }
   border: none;
   color: #2563eb;
   font-size: 12px;
-  padding: 0;
+  padding: 4px 0;
+  min-height: 44px;
   text-decoration: underline;
 }
 #use-location:hover { color: #1d4ed8; }
+#use-location:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; border-radius: 3px; }
 
 button.primary {
-  padding: 11px;
+  padding: 13px;
+  min-height: 48px;
   background: #2563eb;
   color: #fff;
   border: none;
@@ -96,22 +123,39 @@ button.primary {
   font-weight: 600;
   width: 100%;
 }
-button.primary:hover { background: #1d4ed8; }
+button.primary:hover    { background: #1d4ed8; }
 button.primary:disabled { background: #93c5fd; cursor: not-allowed; }
+button.primary:focus-visible { outline: 3px solid #1d4ed8; outline-offset: 3px; }
 
-/* ── Status ──────────────────────────────────────── */
+button.install {
+  padding: 11px;
+  min-height: 44px;
+  background: #f0f4ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  width: 100%;
+  margin-top: auto;
+}
+button.install:hover { background: #dbeafe; }
+button.install:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+
+/* ── Status ──────────────────────────────────────────── */
 #status { font-size: 12px; color: #555; min-height: 16px; }
-#status.error { color: #dc2626; }
+#status.error   { color: #dc2626; }
 #status.loading { color: #2563eb; }
 
-/* ── Preference chips ────────────────────────────── */
+/* ── Preference chips ────────────────────────────────── */
 #prefs { display: flex; flex-direction: column; gap: 6px; }
 
 .pref-chip {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 10px;
+  padding: 10px 12px;
+  min-height: 44px;
   border: 1px solid #e5e7eb;
   border-radius: 6px;
   cursor: pointer;
@@ -119,12 +163,14 @@ button.primary:disabled { background: #93c5fd; cursor: not-allowed; }
   background: #fafafa;
   transition: background 0.15s, border-color 0.15s;
   user-select: none;
+  touch-action: manipulation;
 }
 .pref-chip:hover { background: #f0f4ff; border-color: #93c5fd; }
 .pref-chip input { accent-color: #2563eb; cursor: pointer; }
 .pref-chip:has(input:checked) { background: #eff6ff; border-color: #2563eb; font-weight: 600; }
+.pref-chip:focus-within { outline: 3px solid #2563eb; outline-offset: 2px; }
 
-/* ── Route cards ─────────────────────────────────── */
+/* ── Route cards ─────────────────────────────────────── */
 #route-cards { display: flex; flex-direction: column; gap: 8px; }
 #route-cards.hidden { display: none; }
 
@@ -132,29 +178,26 @@ button.primary:disabled { background: #93c5fd; cursor: not-allowed; }
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 12px;
+  min-height: 56px;
   border: 2px solid #e5e7eb;
   border-radius: 8px;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
   background: #fafafa;
+  touch-action: manipulation;
 }
-.route-card:hover { background: #f0f4ff; border-color: #93c5fd; }
+.route-card:hover    { background: #f0f4ff; border-color: #93c5fd; }
 .route-card.selected { background: #eff6ff; border-color: var(--route-color); }
+.route-card:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
 
-.route-dot {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: var(--route-color);
-}
+.route-dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; background: var(--route-color); }
 
 .route-card-info { display: flex; flex-direction: column; gap: 3px; }
 .route-name  { font-weight: 600; font-size: 13px; }
 .route-stats { font-size: 11px; color: #666; }
 
-/* ── Selected route info ─────────────────────────── */
+/* ── Selected route info ─────────────────────────────── */
 #selected-info {
   display: flex;
   flex-direction: column;
@@ -170,7 +213,7 @@ button.primary:disabled { background: #93c5fd; cursor: not-allowed; }
 .stat-label { color: #555; font-size: 12px; }
 .stat span:last-child { font-weight: 700; color: #1e40af; font-size: 13px; }
 
-/* ── Main (map + elevation) ──────────────────────── */
+/* ── Main (map + elevation) ──────────────────────────── */
 #main {
   flex: 1;
   display: flex;
@@ -178,9 +221,13 @@ button.primary:disabled { background: #93c5fd; cursor: not-allowed; }
   min-width: 0;
 }
 
-#map { flex: 1; min-height: 0; height: 100%; }
+#map {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
 
-/* ── Elevation panel ─────────────────────────────── */
+/* ── Elevation panel ─────────────────────────────────── */
 #elevation-panel {
   height: 200px;
   background: #fff;
@@ -202,19 +249,43 @@ button.primary:disabled { background: #93c5fd; cursor: not-allowed; }
 #elevation-close {
   background: none;
   border: none;
-  font-size: 14px;
+  font-size: 16px;
   color: #888;
-  padding: 0 4px;
+  padding: 4px 8px;
+  min-width: 44px;
+  min-height: 44px;
   line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 #elevation-close:hover { color: #333; }
+#elevation-close:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; border-radius: 4px; }
 
 #elevation-chart { flex: 1; min-height: 0; }
 
-/* ── Mobile ──────────────────────────────────────── */
+/* ── PWA standalone mode adjustments ────────────────── */
+@media (display-mode: standalone) {
+  #sidebar { padding-top: max(28px, env(safe-area-inset-top)); }
+}
+
+/* ── Mobile ──────────────────────────────────────────── */
 @media (max-width: 640px) {
   body { flex-direction: column; }
-  #sidebar { width: 100%; height: auto; max-height: 50vh; }
-  #main { flex: 1; }
-  #elevation-panel { height: 160px; }
+
+  #sidebar {
+    width: 100%;
+    height: auto;
+    max-height: 52vh;
+    padding-top:   max(12px, env(safe-area-inset-top));
+    padding-left:  max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+  }
+
+  #main { flex: 1; min-height: 0; }
+
+  #elevation-panel {
+    height: 160px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
 }
