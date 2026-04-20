@@ -34,7 +34,7 @@ function updateDistLabel() {
   const min = Math.round(km / 5.5 * 60);
   const h   = Math.floor(min / 60), m = min % 60;
   const time = h > 0 ? `${h}h ${m}m` : `${min} min`;
-  distLabel.textContent = `${slider.value} km · ~${time}`;
+  distLabel.innerHTML = `<span>${slider.value} km</span><small>~${time}</small>`;
 }
 slider.addEventListener("input", updateDistLabel);
 updateDistLabel();
@@ -97,7 +97,7 @@ document.getElementById("new-search-btn").addEventListener("click", () => {
   setStatus("Update your start or distance, then generate again.");
 });
 
-// ── Generate routes ───────────────────────────────────────────
+// ── Generate routes (progressive) ────────────────────────────
 document.getElementById("generate").addEventListener("click", generateRoutes);
 
 async function generateRoutes() {
@@ -113,42 +113,66 @@ async function generateRoutes() {
   const distanceMeters = parseFloat(slider.value) * 1000;
   const btn = document.getElementById("generate");
   btn.disabled = true;
-  setStatus("Generating 3 routes…", "loading");
   clearRoutes();
 
-  try {
-    const pref = getPrefs();
-    const fetcher = pref === "scenic"
-      ? (_cfg, i) => fetchScenicRoute(startCoords, distanceMeters, i)
-      : (cfg)     => fetchRoute(startCoords, distanceMeters, cfg);
+  // Pre-allocate arrays and show skeletons immediately
+  routeData   = [null, null, null];
+  routeLayers = [null, null, null];
+  showSkeletonCards();
+  setStatus("Generating routes…", "loading");
 
-    const results = await Promise.all(ROUTE_CONFIGS.map(fetcher));
-    routeData = results;
+  const pref = getPrefs();
+  let completedCount = 0;
+  let firstSelected  = false;
 
-    results.forEach((geojson, i) => {
-      const layer = L.geoJSON(geojson, {
-        style: { color: ROUTE_CONFIGS[i].color, weight: 4, opacity: 0.6 },
-        onEachFeature: (_, l) => {
-          l.on("click", (e) => { L.DomEvent.stopPropagation(e); selectRoute(i); });
-        },
-      }).addTo(map);
-      routeLayers.push(layer);
-    });
+  const routePromises = ROUTE_CONFIGS.map((cfg, i) => {
+    const p = pref === "scenic"
+      ? fetchScenicRoute(startCoords, distanceMeters, i)
+      : fetchRoute(startCoords, distanceMeters, cfg);
 
-    const combined = routeLayers.map((l) => l.getBounds()).reduce((a, b) => a.extend(b));
+    return p
+      .then((geojson) => {
+        routeData[i] = geojson;
+
+        const layer = L.geoJSON(geojson, {
+          style: { color: cfg.color, weight: 4, opacity: 0.6 },
+          onEachFeature: (_, l) => {
+            l.on("click", (e) => { L.DomEvent.stopPropagation(e); selectRoute(i); });
+          },
+        }).addTo(map);
+        routeLayers[i] = layer;
+
+        updateRouteCard(i, geojson);
+
+        completedCount++;
+        setStatus(`Generating routes… ${completedCount}/3`, "loading");
+
+        if (!firstSelected) {
+          firstSelected = true;
+          selectRoute(i);
+        }
+      })
+      .catch((err) => {
+        updateRouteCardError(i, err.message);
+      });
+  });
+
+  await Promise.allSettled(routePromises);
+
+  const validLayers = routeLayers.filter(Boolean);
+  if (validLayers.length > 0) {
+    const combined = validLayers.map((l) => l.getBounds()).reduce((a, b) => a.extend(b));
     map.fitBounds(combined, { padding: [40, 40] });
+    setStatus(`${ROUTE_CONFIGS[selectedIndex]?.name ?? "Route"} selected.`);
+  } else {
+    setStatus("Failed to generate routes. Try a different start point.", "error");
+  }
 
-    renderRouteCards(results);
-    selectRoute(0); // also sets status
+  btn.disabled = false;
 
-    if (window.innerWidth <= 640) {
-      document.getElementById("sidebar").classList.add("routes-mode");
-      document.getElementById("new-search-btn").classList.remove("hidden");
-    }
-  } catch (err) {
-    setStatus(`Error: ${err.message}`, "error");
-  } finally {
-    btn.disabled = false;
+  if (window.innerWidth <= 640 && validLayers.length > 0) {
+    document.getElementById("sidebar").classList.add("routes-mode");
+    document.getElementById("new-search-btn").classList.remove("hidden");
   }
 }
 
@@ -160,7 +184,7 @@ async function fetchWithTolerance(profile, baseBody, distanceMeters, baseSeed, l
   for (let attempt = 0; attempt < 4; attempt++) {
     const body = {
       ...baseBody,
-      options: { round_trip: { ...baseBody.options.round_trip, seed: baseSeed + attempt * 31 } },
+      options: { ...baseBody.options, round_trip: { ...baseBody.options.round_trip, seed: baseSeed + attempt * 31 } },
     };
     try {
       const geojson = await orsPost(profile, body, label);
@@ -185,13 +209,17 @@ async function fetchRoute(coords, distanceMeters, cfg) {
 }
 
 async function fetchScenicRoute(coords, distanceMeters, variant) {
-  const cfg = ROUTE_CONFIGS[variant];
+  const cfg        = ROUTE_CONFIGS[variant];
+  const scenicSeed = cfg.seed + 200; // offset ensures different exploration direction from "Any"
   const body = {
     coordinates: [coords],
-    options: { round_trip: { length: distanceMeters, points: cfg.points, seed: cfg.seed } },
+    options: {
+      round_trip:    { length: distanceMeters, points: cfg.points, seed: scenicSeed },
+      profile_params: { weightings: { green: 0.8 } }, // prefer parks, canal paths, green areas
+    },
     units: "km", elevation: true, instructions: false,
   };
-  return fetchWithTolerance("foot-walking", body, distanceMeters, cfg.seed, cfg.name);
+  return fetchWithTolerance("foot-walking", body, distanceMeters, scenicSeed, cfg.name);
 }
 
 async function orsPost(profile, body, label) {
@@ -208,43 +236,60 @@ async function orsPost(profile, body, label) {
 }
 
 // ── Route cards ───────────────────────────────────────────────
-function renderRouteCards(results) {
+function showSkeletonCards() {
   const container = document.getElementById("route-cards");
   container.innerHTML = "";
-
-  results.forEach((geojson, i) => {
-    const cfg    = ROUTE_CONFIGS[i];
-    const props  = geojson.features?.[0]?.properties?.summary;
-    const ascent = geojson.features?.[0]?.properties?.ascent;
-    const stats  = props
-      ? `${props.distance.toFixed(1)} km · ${formatDuration(props.duration)}${ascent != null ? ` · ↑${Math.round(ascent)}m` : ""}`
-      : cfg.name;
-
+  ROUTE_CONFIGS.forEach((cfg, i) => {
     const card = document.createElement("div");
-    card.className = "route-card" + (i === selectedIndex ? " selected" : "");
+    card.className = "route-card skeleton";
+    card.id = `route-card-${i}`;
     card.style.setProperty("--route-color", cfg.color);
     card.setAttribute("role", "listitem");
-    card.setAttribute("tabindex", "0");
-    card.setAttribute("aria-label", `${cfg.name}: ${stats}`);
     card.innerHTML = `
       <div class="route-dot" aria-hidden="true" style="background:${cfg.color}"></div>
       <div class="route-card-info">
         <span class="route-name">${cfg.name}</span>
-        <span class="route-stats">${stats}</span>
+        <span class="route-stats">loading…</span>
       </div>`;
-    card.addEventListener("click", () => selectRoute(i));
-    card.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectRoute(i); } });
     container.appendChild(card);
   });
-
   container.classList.remove("hidden");
+}
+
+function updateRouteCard(i, geojson) {
+  const cfg   = ROUTE_CONFIGS[i];
+  const props  = geojson.features?.[0]?.properties?.summary;
+  const ascent = geojson.features?.[0]?.properties?.ascent;
+  const stats  = props
+    ? `${props.distance.toFixed(1)} km · ${formatDuration(props.duration)}${ascent != null ? ` · ↑${Math.round(ascent)}m` : ""}`
+    : cfg.name;
+
+  const card = document.getElementById(`route-card-${i}`);
+  if (!card) return;
+  card.className = "route-card" + (i === selectedIndex ? " selected" : "");
+  card.setAttribute("tabindex", "0");
+  card.setAttribute("aria-label", `${cfg.name}: ${stats}`);
+  card.querySelector(".route-stats").textContent = stats;
+  card.addEventListener("click", () => selectRoute(i));
+  card.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectRoute(i); } });
+}
+
+function updateRouteCardError(i, msg) {
+  const card = document.getElementById(`route-card-${i}`);
+  if (!card) return;
+  card.className = "route-card";
+  card.style.opacity = "0.5";
+  card.querySelector(".route-stats").textContent = "Failed to load";
+  card.setAttribute("aria-label", `${ROUTE_CONFIGS[i].name}: failed — ${msg}`);
 }
 
 // ── Route selection ───────────────────────────────────────────
 function selectRoute(index) {
+  if (!routeData[index]) return;
   selectedIndex = index;
 
   routeLayers.forEach((layer, i) => {
+    if (!layer) return;
     layer.setStyle({ weight: i === index ? 6 : 3, opacity: i === index ? 1 : 0.3 });
     if (i === index) layer.bringToFront();
   });
@@ -320,9 +365,10 @@ document.getElementById("elevation-close").addEventListener("click", () => {
 
 // ── Helpers ───────────────────────────────────────────────────
 function clearRoutes() {
-  routeLayers.forEach((l) => map.removeLayer(l));
+  routeLayers.forEach((l) => { if (l) map.removeLayer(l); });
   routeLayers = []; routeData = []; selectedIndex = null;
   document.getElementById("route-cards").classList.add("hidden");
+  document.getElementById("route-cards").innerHTML = "";
   document.getElementById("selected-info").classList.add("hidden");
   document.getElementById("elevation-panel").classList.add("hidden");
   if (elevationChart) { elevationChart.destroy(); elevationChart = null; }

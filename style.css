@@ -59,6 +59,15 @@ input[type="range"] {
   color: #2563eb;
   min-width: 52px;
   text-align: right;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.2;
+}
+#distance-label small {
+  font-size: 11px;
+  font-weight: 500;
+  color: #6b7280;
 }
 
 .address-row { display: flex; gap: 6px; }
@@ -222,6 +231,22 @@ button.install:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; 
 .route-card-info { display: flex; flex-direction: column; gap: 3px; }
 .route-name  { font-weight: 600; font-size: 13px; }
 .route-stats { font-size: 11px; color: #666; }
+
+/* ── Skeleton loading cards ──────────────────────────── */
+.route-card.skeleton { cursor: default; pointer-events: none; }
+.route-card.skeleton .route-name,
+.route-card.skeleton .route-stats {
+  background: #e5e7eb;
+  color: transparent;
+  border-radius: 4px;
+  animation: shimmer 1.2s ease-in-out infinite;
+}
+.route-card.skeleton .route-name  { width: 60px; }
+.route-card.skeleton .route-stats { width: 130px; margin-top: 2px; }
+@keyframes shimmer {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
+}
 
 /* ── Selected route info ─────────────────────────────── */
 #selected-info {

@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'ottawa-run-v5';
+const CACHE_VERSION = 'ottawa-run-v6';
 const BASE = self.registration.scope; // e.g. https://zenholid.github.io/ottawa-run-routes/
 const STATIC_ASSETS = [
   BASE,
